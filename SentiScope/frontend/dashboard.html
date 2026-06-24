@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SentiScope</title>
+  <link rel="icon" type="image/png" href="logo.jpeg">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #08090d;
+      --surface: #0f1117;
+      --surface2: #161920;
+      --border: rgba(255,255,255,0.07);
+      --text: #e8eaf0;
+      --text-muted: #6b7280;
+      --pos: #22d3a4;
+      --neg: #f45b69;
+      --neu: #7c86d4;
+      --accent: #7c86d4;
+      --glow-pos: rgba(34,211,164,0.15);
+      --glow-neg: rgba(244,91,105,0.15);
+      --glow-neu: rgba(124,134,212,0.15);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { height:100%; background:var(--bg); color:var(--text); font-family:'Space Grotesk',sans-serif; overflow-x:hidden; }
+
+    body::before {
+      content:''; position:fixed; inset:0; z-index:0;
+      background-image:
+        linear-gradient(rgba(124,134,212,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,134,212,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events:none;
+    }
+
+    .app { position:relative; z-index:1; display:grid; grid-template-rows:auto auto 1fr; min-height:100vh; gap:0; }
+
+    /* Header */
+    header {
+      padding:20px 32px;
+      display:flex; align-items:center; justify-content:space-between;
+      border-bottom:1px solid var(--border);
+      background:rgba(8,9,13,0.85); backdrop-filter:blur(12px);
+      position:sticky; top:0; z-index:100;
+    }
+    .logo { display:flex; align-items:center; gap:12px; }
+    .logo-icon {
+      width:38px; height:38px; border-radius:10px;
+      background:linear-gradient(135deg, #7c86d4, #22d3a4);
+      display:flex; align-items:center; justify-content:center;
+      font-size:18px;
+    }
+    .logo h1 { font-size:18px; font-weight:700; letter-spacing:-0.3px; }
+    .logo span { color:var(--accent); }
+    .header-right { display:flex; align-items:center; gap:20px; }
+    .ws-status {
+      display:flex; align-items:center; gap:6px;
+      font-size:12px; color:var(--text-muted); font-family:'JetBrains Mono',monospace;
+    }
+    .ws-dot { width:8px; height:8px; border-radius:50%; background:#374151; transition:background 0.3s; }
+    .ws-dot.connected { background:var(--pos); box-shadow:0 0 6px var(--pos); animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+    .total-count { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-muted); }
+    .total-count strong { color:var(--text); font-size:14px; }
+
+    /* Stats Bar */
+    .stats-bar {
+      display:grid; grid-template-columns:repeat(4,1fr);
+      gap:1px; background:var(--border);
+      border-bottom:1px solid var(--border);
+    }
+    .stat-card {
+      background:var(--surface); padding:20px 28px;
+      display:flex; flex-direction:column; gap:4px;
+      transition:background 0.2s;
+    }
+    .stat-card:hover { background:var(--surface2); }
+    .stat-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); }
+    .stat-value { font-size:32px; font-weight:700; font-family:'JetBrains Mono',monospace; line-height:1; }
+    .stat-sub { font-size:12px; color:var(--text-muted); }
+    .stat-card.pos .stat-value { color:var(--pos); }
+    .stat-card.neg .stat-value { color:var(--neg); }
+    .stat-card.neu .stat-value { color:var(--neu); }
+    .stat-card.total .stat-value { color:var(--text); }
+
+    /* Main Content */
+    .main { display:grid; grid-template-columns:1fr 380px; gap:0; overflow:hidden; }
+
+    /* Feed */
+    .feed-panel { display:flex; flex-direction:column; border-right:1px solid var(--border); }
+    .panel-header {
+      padding:16px 24px; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      background:var(--surface); flex-shrink:0;
+    }
+    .panel-title { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); }
+    .filter-tabs { display:flex; gap:4px; }
+    .filter-btn {
+      padding:4px 12px; border-radius:20px; border:1px solid var(--border);
+      background:transparent; color:var(--text-muted); font-size:11px;
+      cursor:pointer; transition:all 0.2s; font-family:'Space Grotesk',sans-serif;
+    }
+    .filter-btn.active { color:var(--bg); font-weight:600; }
+    .filter-btn[data-f="all"].active { background:#7c86d4; border-color:#7c86d4; }
+    .filter-btn[data-f="positive"].active { background:var(--pos); border-color:var(--pos); color:#000; }
+    .filter-btn[data-f="negative"].active { background:var(--neg); border-color:var(--neg); }
+    .filter-btn[data-f="neutral"].active { background:var(--neu); border-color:var(--neu); }
+
+    .feed {
+      flex:1; overflow-y:auto; padding:16px;
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .feed::-webkit-scrollbar { width:4px; }
+    .feed::-webkit-scrollbar-track { background:transparent; }
+    .feed::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    /* Post Card */
+    .post-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:16px;
+      animation:slideIn 0.4s cubic-bezier(0.16,1,0.3,1);
+      transition:border-color 0.2s, transform 0.15s;
+      cursor:default;
+    }
+    .post-card:hover { transform:translateX(3px); }
+    .post-card.positive { border-left:3px solid var(--pos); }
+    .post-card.negative { border-left:3px solid var(--neg); }
+    .post-card.neutral { border-left:3px solid var(--neu); }
+    @keyframes slideIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+
+    .post-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px; }
+    .post-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .source-badge {
+      font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px;
+      text-transform:uppercase; letter-spacing:0.5px;
+      background:var(--surface2); color:var(--text-muted);
+    }
+    .sb-reddit { background:rgba(255,69,0,0.15); color:#ff6314 !important; }
+    .sb-hackernews { background:rgba(255,102,0,0.15); color:#ff9a3c !important; }
+    .sb-bbc { background:rgba(187,0,0,0.15); color:#ff6666 !important; }
+    .sb-npr { background:rgba(0,138,184,0.15); color:#4db8e8 !important; }
+    .sb-aljazeera { background:rgba(0,169,100,0.15); color:#00c96e !important; }
+    .sb-techcrunch { background:rgba(15,157,88,0.15); color:#3ddc84 !important; }
+    .sb-theverge { background:rgba(236,40,69,0.15); color:#f06080 !important; }
+    .sb-ars { background:rgba(250,164,25,0.15); color:#faa419 !important; }
+    .sb-science { background:rgba(124,134,212,0.2); color:#a0aaff !important; }
+    .post-author { font-size:12px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+    .sentiment-chip {
+      display:flex; align-items:center; gap:5px;
+      padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
+      white-space:nowrap; flex-shrink:0;
+    }
+    .sentiment-chip.positive { background:var(--glow-pos); color:var(--pos); border:1px solid rgba(34,211,164,0.2); }
+    .sentiment-chip.negative { background:var(--glow-neg); color:var(--neg); border:1px solid rgba(244,91,105,0.2); }
+    .sentiment-chip.neutral { background:var(--glow-neu); color:var(--neu); border:1px solid rgba(124,134,212,0.2); }
+
+    .post-text { font-size:13.5px; line-height:1.55; color:var(--text); margin-bottom:12px; }
+
+    .confidence-bar { height:3px; background:var(--border); border-radius:2px; overflow:hidden; margin-bottom:8px; }
+    .confidence-fill { height:100%; border-radius:2px; transition:width 0.6s ease; }
+    .positive .confidence-fill { background:var(--pos); }
+    .negative .confidence-fill { background:var(--neg); }
+    .neutral .confidence-fill { background:var(--neu); }
+
+    .post-footer { display:flex; align-items:center; justify-content:space-between; }
+    .post-stats { display:flex; gap:12px; font-size:11px; color:var(--text-muted); }
+    .post-time { font-size:11px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+
+    /* Right Panel */
+    .right-panel { display:flex; flex-direction:column; overflow:hidden; }
+
+    /* Analyze Box */
+    .analyze-box {
+      padding:20px; border-bottom:1px solid var(--border);
+      background:var(--surface); flex-shrink:0;
+    }
+    .analyze-box h3 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:12px; }
+    textarea {
+      width:100%; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); border-radius:8px; padding:12px; font-size:13px;
+      font-family:'Space Grotesk',sans-serif; resize:none; height:80px;
+      outline:none; transition:border-color 0.2s;
+    }
+    textarea:focus { border-color:var(--accent); }
+    .analyze-btn {
+      margin-top:10px; width:100%; padding:10px;
+      background:linear-gradient(135deg, #7c86d4, #5b67b8);
+      border:none; border-radius:8px; color:white; font-weight:600;
+      font-size:13px; cursor:pointer; transition:opacity 0.2s;
+      font-family:'Space Grotesk',sans-serif;
+    }
+    .analyze-btn:hover { opacity:0.85; }
+    .analyze-result {
+      margin-top:12px; padding:12px; border-radius:8px;
+      background:var(--bg); border:1px solid var(--border); display:none;
+    }
+    .analyze-result .result-label { font-size:20px; font-weight:700; margin-bottom:4px; }
+    .analyze-result .result-conf { font-size:12px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+    .score-bars { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+    .score-row { display:flex; align-items:center; gap:8px; font-size:11px; }
+    .score-row span:first-child { width:55px; color:var(--text-muted); }
+    .score-track { flex:1; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+    .score-bar-fill { height:100%; border-radius:2px; transition:width 0.5s ease; }
+    .score-row span:last-child { width:38px; text-align:right; font-family:'JetBrains Mono',monospace; color:var(--text-muted); }
+
+    /* Trend Chart */
+    .trend-panel { padding:20px; border-bottom:1px solid var(--border); flex-shrink:0; }
+    .trend-panel h3 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:14px; }
+    canvas#trendChart { width:100% !important; }
+
+    /* Topic Distribution */
+    .topic-panel { padding:20px; flex:1; overflow-y:auto; }
+    .topic-panel h3 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:14px; }
+    .topic-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .topic-name { font-size:12px; width:80px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .topic-track { flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+    .topic-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#7c86d4,#22d3a4); transition:width 0.5s; }
+    .topic-count { font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-muted); width:24px; text-align:right; }
+
+    /* Empty state */
+    .empty-feed { text-align:center; padding:60px 20px; color:var(--text-muted); }
+    .empty-feed .big { font-size:40px; margin-bottom:12px; }
+    .empty-feed p { font-size:13px; line-height:1.6; }
+    .empty-feed code { background:#0f1117; padding:6px 12px; border-radius:6px; font-size:12px; color:#7c86d4; display:inline-block; margin-top:8px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📊</div>
+      <h1>Senti<span>Scope</span></h1>
+    </div>
+    <div class="header-right">
+      <div class="ws-status">
+        <div class="ws-dot" id="wsDot"></div>
+        <span id="wsLabel">Connecting…</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:11px">
+        <span style="color:var(--text-muted)">Live from:</span>
+        <span class="source-badge sb-reddit">Reddit</span>
+        <span class="source-badge sb-hackernews">HackerNews</span>
+        <span class="source-badge sb-bbc">BBC</span>
+        <span class="source-badge sb-techcrunch">TechCrunch</span>
+        <span style="color:var(--text-muted)">+more</span>
+      </div>
+      <div class="total-count">Posts analysed: <strong id="totalCount">0</strong></div>
+    </div>
+  </header>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-card pos">
+      <div class="stat-label">Positive</div>
+      <div class="stat-value" id="posCount">0</div>
+      <div class="stat-sub" id="posPct">—</div>
+    </div>
+    <div class="stat-card neg">
+      <div class="stat-label">Negative</div>
+      <div class="stat-value" id="negCount">0</div>
+      <div class="stat-sub" id="negPct">—</div>
+    </div>
+    <div class="stat-card neu">
+      <div class="stat-label">Neutral</div>
+      <div class="stat-value" id="neuCount">0</div>
+      <div class="stat-sub" id="neuPct">—</div>
+    </div>
+    <div class="stat-card total">
+      <div class="stat-label">Avg Confidence</div>
+      <div class="stat-value" id="avgConf">—</div>
+      <div class="stat-sub">ensemble score</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Feed -->
+    <div class="feed-panel">
+      <div class="panel-header">
+        <div class="panel-title">Live Feed</div>
+        <div class="filter-tabs">
+          <button class="filter-btn active" data-f="all">All</button>
+          <button class="filter-btn" data-f="positive">🟢 Positive</button>
+          <button class="filter-btn" data-f="negative">🔴 Negative</button>
+          <button class="filter-btn" data-f="neutral">🔵 Neutral</button>
+        </div>
+      </div>
+      <div class="feed" id="feed">
+        <div class="empty-feed">
+          <div class="big">📡</div>
+          <p>Waiting for live posts…<br>Make sure the backend is running on port 8000.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+
+      <!-- Manual Analyze -->
+      <div class="analyze-box">
+        <h3>Analyse Text</h3>
+        <textarea id="analyzeInput" placeholder="Type or paste any text to analyse sentiment…"></textarea>
+        <button class="analyze-btn" onclick="analyzeText()">✨ Analyse Sentiment</button>
+        <div class="analyze-result" id="analyzeResult">
+          <div class="result-label" id="resultLabel"></div>
+          <div class="result-conf" id="resultConf"></div>
+          <div class="score-bars" id="scoreBars"></div>
+        </div>
+      </div>
+
+      <!-- Trend Chart -->
+      <div class="trend-panel">
+        <h3>Sentiment Trend (last 20)</h3>
+        <canvas id="trendChart" height="120"></canvas>
+      </div>
+
+      <!-- Topic Distribution -->
+      <div class="topic-panel">
+        <h3>Topic Distribution</h3>
+        <div id="topicList"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  const API = 'http://localhost:8000';
+  const WS_URL = 'ws://localhost:8000/ws';
+  const MAX_FEED = 50;
+
+  let posts = [];
+  let counts = { positive:0, negative:0, neutral:0 };
+  let topics = {};
+  let confSum = 0, confCnt = 0;
+  let filter = 'all';
+  let trendData = { pos:[], neg:[], neu:[], labels:[] };
+  let ws = null, chart = null;
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  function connectWS() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      document.getElementById('wsDot').classList.add('connected');
+      document.getElementById('wsLabel').textContent = 'Live';
+      console.log('WebSocket connected');
+    };
+
+    ws.onmessage = e => {
+      const post = JSON.parse(e.data);
+      ingestPost(post);
+    };
+
+    ws.onerror = () => { tryFallback(); };
+
+    ws.onclose = () => {
+      document.getElementById('wsDot').classList.remove('connected');
+      document.getElementById('wsLabel').textContent = 'Reconnecting…';
+      setTimeout(connectWS, 3000);
+    };
+  }
+
+  // ── Fallback: poll /stream/recent if WS fails ──────────────────────────────
+  let lastSeen = new Set();
+  let fallbackStarted = false;
+  function tryFallback() {
+    if (fallbackStarted) return;
+    fallbackStarted = true;
+    document.getElementById('wsLabel').textContent = 'Polling…';
+    setInterval(async () => {
+      try {
+        const r = await fetch(`${API}/stream/recent?limit=10`);
+        const data = await r.json();
+        data.reverse().forEach(p => {
+          if (!lastSeen.has(p.id)) { lastSeen.add(p.id); ingestPost(p); }
+        });
+      } catch {}
+    }, 2000);
+  }
+
+  // ── Ingest post ────────────────────────────────────────────────────────────
+  function ingestPost(post) {
+    const sent = post.sentiment || 'neutral';
+    counts[sent]++;
+    confSum += post.confidence || 0;
+    confCnt++;
+    if (post.topic) topics[post.topic] = (topics[post.topic] || 0) + 1;
+
+    posts.unshift(post);
+    if (posts.length > MAX_FEED) posts.pop();
+
+    const ts = post.timestamp
+      ? new Date(post.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      : new Date().toLocaleTimeString();
+    trendData.labels.push(ts);
+    trendData.pos.push(counts.positive);
+    trendData.neg.push(counts.negative);
+    trendData.neu.push(counts.neutral);
+    if (trendData.labels.length > 20) {
+      trendData.labels.shift(); trendData.pos.shift();
+      trendData.neg.shift(); trendData.neu.shift();
+    }
+
+    updateStats();
+    renderFeed();
+    updateChart();
+    renderTopics();
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  function updateStats() {
+    const total = counts.positive + counts.negative + counts.neutral || 1;
+    document.getElementById('posCount').textContent = counts.positive;
+    document.getElementById('negCount').textContent = counts.negative;
+    document.getElementById('neuCount').textContent = counts.neutral;
+    document.getElementById('totalCount').textContent = total;
+    document.getElementById('posPct').textContent = `${(counts.positive/total*100).toFixed(1)}% of total`;
+    document.getElementById('negPct').textContent = `${(counts.negative/total*100).toFixed(1)}% of total`;
+    document.getElementById('neuPct').textContent = `${(counts.neutral/total*100).toFixed(1)}% of total`;
+    const avg = confCnt ? (confSum/confCnt*100).toFixed(1)+'%' : '—';
+    document.getElementById('avgConf').textContent = avg;
+  }
+
+  // ── Feed Render ────────────────────────────────────────────────────────────
+  function renderFeed() {
+    const feed = document.getElementById('feed');
+    const filtered = filter === 'all' ? posts : posts.filter(p => p.sentiment === filter);
+
+    if (!filtered.length) {
+      feed.innerHTML = `<div class="empty-feed"><div class="big">📭</div><p>No ${filter} posts yet…</p></div>`;
+      return;
+    }
+
+    const card = buildCard(filtered[0]);
+    if (feed.firstChild && feed.firstChild.classList?.contains('empty-feed')) {
+      feed.innerHTML = '';
+    }
+    feed.insertAdjacentHTML('afterbegin', card);
+
+    while (feed.children.length > MAX_FEED) feed.removeChild(feed.lastChild);
+  }
+
+  function sourceCls(src) {
+    const map = {
+      'Reddit':'reddit','HackerNews':'hackernews',
+      'BBC World':'bbc','BBC Tech':'bbc','NPR News':'npr',
+      'Al Jazeera':'aljazeera','TechCrunch':'techcrunch',
+      'The Verge':'theverge','Ars Technica':'ars','Science Daily':'science'
+    };
+    return 'sb-' + (map[src] || 'reddit');
+  }
+
+  function buildCard(p) {
+    const sent = p.sentiment || 'neutral';
+    const conf = ((p.confidence || 0) * 100).toFixed(1);
+    const time = p.timestamp ? new Date(p.timestamp).toLocaleTimeString() : '—';
+    const emoji = { positive:'😊', negative:'😞', neutral:'😐' }[sent] || '🤔';
+    const linkHtml = p.url
+      ? `<a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;text-decoration:none;" title="Open article">↗ read</a>`
+      : '';
+    return `
+      <div class="post-card ${sent}">
+        <div class="post-header">
+          <div class="post-meta">
+            <span class="source-badge ${sourceCls(p.source||'')}">${esc(p.source||'unknown')}</span>
+            <span class="post-author">@${esc((p.author||'anon').slice(0,20))}</span>
+            ${p.topic ? `<span class="source-badge" style="font-size:10px">${esc(p.topic)}</span>` : ''}
+          </div>
+          <div class="sentiment-chip ${sent}">${emoji} ${sent}</div>
+        </div>
+        <div class="post-text">${esc(p.text||'').slice(0,240)}</div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${conf}%"></div></div>
+        <div class="post-footer">
+          <div class="post-stats">
+            <span>❤ ${p.likes||0}</span>
+            <span>💬 ${p.retweets||0}</span>
+            <span>🎯 ${conf}%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${linkHtml}
+            <div class="post-time">${time}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function esc(s){ const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+
+  // ── Chart ──────────────────────────────────────────────────────────────────
+  function initChart() {
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type:'line',
+      data:{
+        labels:trendData.labels,
+        datasets:[
+          { label:'Positive', data:trendData.pos, borderColor:'#22d3a4', backgroundColor:'rgba(34,211,164,0.1)', tension:0.4, pointRadius:0, fill:true },
+          { label:'Negative', data:trendData.neg, borderColor:'#f45b69', backgroundColor:'rgba(244,91,105,0.1)', tension:0.4, pointRadius:0, fill:true },
+          { label:'Neutral',  data:trendData.neu, borderColor:'#7c86d4', backgroundColor:'rgba(124,134,212,0.1)', tension:0.4, pointRadius:0, fill:true },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:true,
+        animation:{ duration:300 },
+        plugins:{ legend:{ labels:{ color:'#6b7280', font:{size:11}, boxWidth:10 } } },
+        scales:{
+          x:{ display:false },
+          y:{ display:true, ticks:{ color:'#6b7280', font:{size:10} }, grid:{ color:'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+  }
+
+  function updateChart() {
+    if (!chart) return;
+    chart.data.labels = [...trendData.labels];
+    chart.data.datasets[0].data = [...trendData.pos];
+    chart.data.datasets[1].data = [...trendData.neg];
+    chart.data.datasets[2].data = [...trendData.neu];
+    chart.update('none');
+  }
+
+  // ── Topics ─────────────────────────────────────────────────────────────────
+  function renderTopics() {
+    const el = document.getElementById('topicList');
+    const sorted = Object.entries(topics).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const max = sorted[0]?.[1] || 1;
+    el.innerHTML = sorted.map(([name,cnt]) => `
+      <div class="topic-row">
+        <div class="topic-name">${esc(name)}</div>
+        <div class="topic-track"><div class="topic-fill" style="width:${cnt/max*100}%"></div></div>
+        <div class="topic-count">${cnt}</div>
+      </div>`).join('');
+  }
+
+  // ── Manual Analyze ─────────────────────────────────────────────────────────
+  async function analyzeText() {
+    const text = document.getElementById('analyzeInput').value.trim();
+    if (!text) return;
+    const btn = document.querySelector('.analyze-btn');
+    btn.textContent = '⏳ Analysing…'; btn.disabled = true;
+
+    try {
+      const r = await fetch(`${API}/analyze`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text})
+      });
+      const d = await r.json();
+      showResult(d);
+    } catch(e) {
+      showResult(localSentiment(text));
+    } finally {
+      btn.textContent='✨ Analyse Sentiment'; btn.disabled=false;
+    }
+  }
+
+  function showResult(d) {
+    const el = document.getElementById('analyzeResult');
+    const sent = d.sentiment||'neutral';
+    const conf = ((d.confidence||0)*100).toFixed(1);
+    const emoji = {positive:'😊',negative:'😞',neutral:'😐'}[sent]||'🤔';
+    const colors = {positive:'#22d3a4',negative:'#f45b69',neutral:'#7c86d4'};
+
+    document.getElementById('resultLabel').innerHTML =
+      `<span style="color:${colors[sent]}">${emoji} ${sent.toUpperCase()}</span>`;
+    document.getElementById('resultConf').textContent = `Confidence: ${conf}%`;
+
+    const scores = d.label_scores||{positive:0.33,negative:0.33,neutral:0.34};
+    document.getElementById('scoreBars').innerHTML = Object.entries(scores).map(([k,v])=>`
+      <div class="score-row">
+        <span>${k}</span>
+        <div class="score-track"><div class="score-bar-fill" style="width:${(v*100).toFixed(1)}%;background:${colors[k]}"></div></div>
+        <span>${(v*100).toFixed(1)}%</span>
+      </div>`).join('');
+
+    el.style.display='block';
+  }
+
+  // Basic client-side sentiment for offline demo
+  function localSentiment(text) {
+    const pos = ['great','love','amazing','excellent','fantastic','awesome','happy','joy','wonderful','best','good','perfect'];
+    const neg = ['hate','terrible','awful','bad','worst','horrible','disappointing','sad','angry','useless','poor'];
+    const t = text.toLowerCase();
+    let ps=0,ns=0;
+    pos.forEach(w=>{ if(t.includes(w)) ps++; });
+    neg.forEach(w=>{ if(t.includes(w)) ns++; });
+    let sentiment='neutral', confidence=0.55;
+    if(ps>ns){ sentiment='positive'; confidence=0.5+Math.min(ps,5)*0.08; }
+    else if(ns>ps){ sentiment='negative'; confidence=0.5+Math.min(ns,5)*0.08; }
+    const rem = 1-confidence;
+    const label_scores = sentiment==='positive'
+      ? {positive:confidence, negative:rem*0.3, neutral:rem*0.7}
+      : sentiment==='negative'
+      ? {positive:rem*0.3, negative:confidence, neutral:rem*0.7}
+      : {positive:0.33, negative:0.33, neutral:0.34};
+    return {sentiment, confidence, label_scores};
+  }
+
+  // ── Filter Buttons ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      filter = btn.dataset.f;
+      // Re-render all filtered posts
+      const feed = document.getElementById('feed');
+      const filtered = filter === 'all' ? posts : posts.filter(p => p.sentiment === filter);
+      if (!filtered.length) {
+        feed.innerHTML = `<div class="empty-feed"><div class="big">📭</div><p>No ${filter} posts yet…</p></div>`;
+        return;
+      }
+      feed.innerHTML = filtered.map(buildCard).join('');
+    });
+  });
+
+  // ── Enter key to analyze ───────────────────────────────────────────────────
+  document.getElementById('analyzeInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) analyzeText();
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  initChart();
+  connectWS();
+
+  setTimeout(() => {
+    if (posts.length === 0) {
+      document.getElementById('feed').innerHTML = `
+        <div class="empty-feed">
+          <div class="big">🔌</div>
+          <p><strong>Backend not detected.</strong><br>
+          Run the following in your terminal:<br><br>
+          <code>cd sentimentpulse && uvicorn backend.main:app --reload --port 8000</code><br><br>
+          Then refresh this page.<br>
+          Real-time data streams from Reddit, HackerNews &amp; RSS news feeds.</p>
+        </div>`;
+    }
+  }, 4000);
+</script>
+</body>
+</html>
